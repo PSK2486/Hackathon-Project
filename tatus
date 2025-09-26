@@ -1,0 +1,32 @@
+[33m8ceb068[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32msocial[m[33m)[m Improve .gitignore to exclude all video files and media formats
+ .gitignore | 12 [32m+++++++++[m[31m---[m
+ 1 file changed, 9 insertions(+), 3 deletions(-)
+[33m165065e[m Remove public/videos/ files from Git tracking
+ public/videos/README.md    |  34 [31m----------------------------------[m
+ public/videos/course-1.mp4 | Bin [31m208708698[m -> [32m0[m bytes
+ public/videos/sample.txt   |  13 [31m-------------[m
+ 3 files changed, 47 deletions(-)
+[33m552c56d[m 課程訓練功能完成
+ .gitignore | 1 [32m+[m
+ 1 file changed, 1 insertion(+)
+[33m8f275fb[m 課程訓練功能完成
+ .gitignore                    |    1 [32m+[m
+ public/videos/README.md       |   34 [32m++[m
+ public/videos/course-1.mp4    |  Bin [31m0[m -> [32m208708698[m bytes
+ public/videos/sample.txt      |   13 [32m+[m
+ server/src/index.js           |   31 [32m++[m
+ server/src/routes/auth.js     |    9 [32m+[m[31m-[m
+ server/src/routes/progress.js |  287 [32m+++++++++++[m
+ src/components/NavBar.vue     |    3 [32m+[m[31m-[m
+ src/router/auth.js            |   18 [32m+[m[31m-[m
+ src/router/index.js           |    2 [32m+[m
+ src/router/training.js        |  303 [32m+++++++++++[m[31m-[m
+ src/views/CourseDetail.vue    | 1101 [32m+++++++++++++++++++++++++++++++++++++++++[m
+ src/views/Training.vue        |   27 [32m+[m[31m-[m
+ 13 files changed, 1810 insertions(+), 19 deletions(-)
+[33m2865ed8[m[33m ([m[1;31morigin/social[m[33m)[m 社群功能完成，可以正常發文
+ cookies.txt                |   5 [32m+[m
+ server/src/index.js        |  63 [32m+++++++++[m
+ server/src/routes/posts.js |  65 [32m+++++++++[m
+ src/views/Community.vue    | 327 [32m+++++++++++++++++++++++++++++[m[31m----------------[m
+ 4 files changed, 345 insertions(+), 115 deletions(-)
