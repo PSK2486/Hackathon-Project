@@ -1,0 +1,47 @@
+:root {
+  --primary: #2F4F4F;     /* 主色 → 深灰藍 */
+  --primary-dark: #1C1C1C;
+  --primary-light: #708090;
+
+  --text: #222;           /* 主文字 */
+  --text-light: #555;
+  --bg: #F5F5F5;
+  --bg-card: #FFF;
+  --border: #DDD;
+
+  --success: #2E8B57;     /* 綠色 → 完成/選修 */
+  --info: #4682B4;        /* 藍色 → 必修標籤 */
+}
+
+body {
+  margin: 0;
+  font-family: "Noto Sans TC", Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+a {
+  color: var(--link);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+}
+.btn {
+  background: var(--primary);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+.btn:hover {
+  background: var(--primary-dark);
+}

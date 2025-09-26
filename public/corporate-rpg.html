@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8"/>
+<title>入職 Day-1 RPG（公司園區）</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<style>
+  :root{
+    --ink:#0b0e11; --muted:#6b7280; --panel:#ffffff; --line:#e5e7eb; --brand:#1976d2;
+  }
+  html,body{height:100%; margin:0; background:#0b0e11; color:#111; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;}
+  .wrap{max-width:1120px;margin:0 auto;padding:12px; display:grid; grid-template-columns: 760px 1fr; gap:12px;}
+  #game{display:block; width:760px; height:520px; image-rendering: pixelated; border:2px solid #222; background:#000; border-radius:10px}
+  .panel{background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px}
+  .hbar{display:flex;align-items:center;justify-content:space-between;margin:8px auto 0;max-width:1120px;color:#fff}
+  .hbar .title{font-weight:800;font-size:18px}
+  .hud{color:#cbd5e1;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  .hud .dot{width:10px;height:10px;border-radius:50%;background:#22c55e;display:inline-block;margin-right:6px}
+
+  .side h3{margin:0 0 6px}
+  .quest{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+  .quest li{border:1px solid var(--line);border-radius:8px;padding:8px}
+  .quest small{color:var(--muted)}
+  .done{color:#22c55e;font-weight:700}
+
+  .dialog{position:absolute;left:50%;bottom:24px;transform:translateX(-50%);background:rgba(0,0,0,.85);color:#fff;
+          border:1px solid #333;border-radius:10px;padding:10px 12px;max-width:820px;backdrop-filter: blur(3px);}
+  .dialog .k{display:inline-block;padding:0 6px;border:1px solid #fff;border-radius:6px;margin:0 4px}
+
+  .photo{position:fixed;inset:0;display:none;place-items:center;background:rgba(0,0,0,.6);z-index:30}
+  .photo.active{display:grid}
+  .photo .box{background:#fff;border-radius:12px;border:1px solid var(--line);width:min(920px,92vw);padding:10px}
+  .photo img{width:100%;height:auto;border-radius:10px;border:1px solid var(--line);background:#f3f4f6}
+  .photo .head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+  .photo .head b{font-size:16px}
+  .photo .x{border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 10px;cursor:pointer}
+
+  .foot{color:#94a3b8;text-align:center;margin:8px 0 18px;font-size:12px}
+
+  /* 右側面板裡的次要文字 */
+  .hint-muted{color:#374151}
+</style>
+</head>
+<body>
+  <div class="hbar">
+    <div class="title">入職 Day-1 RPG（公司園區）</div>
+    <div class="hud">
+      <span><span class="dot"></span>線上</span>
+      <span>任務完成度：<b id="pct">0%</b></span>
+      <span>提示：方向鍵/WASD 移動，<b>E</b> 查看地標、<b>Enter</b> 下一句、<b>N</b> 日夜切換、<b>R</b> 回到起點。</span>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div style="position:relative">
+      <canvas id="game" width="760" height="520" aria-label="RPG 地圖"></canvas>
+      <!-- 對話 -->
+      <div id="dlg" class="dialog" style="display:none"></div>
+    </div>
+
+    <aside class="side panel">
+      <h3>Day-1 任務清單</h3>
+      <ul id="qList" class="quest"></ul>
+      <hr/>
+      <h3>NPC 提示</h3>
+      <div id="hint" class="hint-muted">請先前往 <b>IT 設備櫃台</b> 領取筆電與開通帳號。</div>
+    </aside>
+  </div>
+
+  <!-- 照片面板（放真實場景） -->
+  <div id="photo" class="photo" role="dialog" aria-label="場景照片">
+    <div class="box">
+      <div class="head">
+        <b id="phTitle">地標</b>
+        <button class="x" onclick="closePhoto()">✕ 關閉</button>
+      </div>
+      <img id="phImg" alt="地標照片"/>
+      <div id="phDesc" style="margin-top:6px;color:#374151"></div>
+    </div>
+  </div>
+
+  <div class="foot">＠黑客松板烤肉出版</div>
+
+<script>
+/* ================= 基本設定 ================= */
+const cvs = document.getElementById('game'), ctx = cvs.getContext('2d');
+const W = cvs.width, H = cvs.height;
+const TILE = 32;                 // 單一圖塊大小
+const VW = Math.floor(W / TILE); // 螢幕可見寬（以 tile 計）
+const VH = Math.floor(H / TILE);
+const SPEED = 2.2;               // 移動速度（像素/frame）
+const keys = {}; addEventListener('keydown',e=>keys[e.key]=true);
+addEventListener('keyup',e=>keys[e.key]=false);
+
+/* ================= 地圖（純 JS tiles） =================
+   0:草地 1:道路 2:牆 3:水 4:建築地板
+   做一張 60×40 tiles 的園區，鏡頭會跟隨玩家捲動
+*/
+const MAP_W=60, MAP_H=40;
+const map = new Array(MAP_H).fill(0).map(()=>new Array(MAP_W).fill(0));
+// 道路網
+for(let y=6;y<MAP_H-6;y++) map[y][10]=1;
+for(let x=10;x<MAP_W-8;x++) map[6][x]=1;
+for(let x=6;x<MAP_W-12;x++) map[20][x]=1;
+for(let y=8;y<MAP_H-8;y++) map[y][30]=1;
+// 建築區塊 & 牆
+function rect(x0,y0,w,h,val){for(let y=y0;y<y0+h;y++)for(let x=x0;x<x0+w;x++) map[y][x]=val;}
+rect(14,2,8,6,2);   rect(15,3,6,4,4);      // IT 權限/設備大樓
+rect(34,5,8,7,2);   rect(35,6,6,5,4);      // 開發環境區
+rect(22,18,8,6,2);  rect(23,19,6,4,4);     // 保健中心
+rect(44,22,8,6,2);  rect(45,23,6,4,4);     // HR 辦公室
+rect(8,26,8,6,2);   rect(9,27,6,4,4);      // 員工餐廳
+
+// === 小工具：把 (x,y) 改成可通行的道路 ===
+function openAsRoad(x, y) { map[y][x] = 1; }
+
+// 1) IT 權限/設備大樓 (底邊中央開三格門)
+for (let x=17; x<=19; x++) {
+  openAsRoad(x, 7);       // 外牆三格
+}
+
+// 2) 開發環境區 (頂邊中央開三格門)
+for (let x=37; x<=39; x++) {
+  openAsRoad(x, 5);
+}
+
+// 3) 保健中心 (頂邊中央開三格門)
+for (let x=25; x<=27; x++) {
+  openAsRoad(x, 18);
+}
+
+// 4) HR 辦公室 (頂邊中央開三格門)
+for (let x=47; x<=49; x++) {
+  openAsRoad(x, 22);
+}
+
+// 5) 員工餐廳 (左邊中央開三格門)
+for (let y=27; y<=29; y++) {
+  openAsRoad(8, y);
+}
+
+// 水域邊界
+for(let y=0;y<MAP_H;y++) map[y][0]=map[y][MAP_W-1]=3;
+for(let x=0;x<MAP_W;x++) map[0][x]=map[MAP_H-1][x]=3;
+
+/* ================= 碰撞 ================= */
+function isBlocked(tx,ty){
+  if(tx<0||ty<0||tx>=MAP_W||ty>=MAP_H) return true;
+  return map[ty][tx]===2 || map[ty][tx]===3;
+}
+
+/* ================= 主角（四向動畫） ================= */
+// 加載角色精靈圖
+const playerImgUp = new Image();
+const playerImgDown = new Image();
+const playerImgLeft = new Image();
+const playerImgRight = new Image();
+
+playerImgUp.src = './playerUp.png';
+playerImgDown.src = './playerDown.png';
+playerImgLeft.src = './playerLeft.png';
+playerImgRight.src = './playerRight.png';
+
+// 確保圖片載入完成後再使用
+const imagePromises = [
+  new Promise(resolve => playerImgUp.onload = resolve),
+  new Promise(resolve => playerImgDown.onload = resolve),
+  new Promise(resolve => playerImgLeft.onload = resolve),
+  new Promise(resolve => playerImgRight.onload = resolve)
+];
+
+// 為防止圖片載入失敗
+playerImgUp.onerror = () => console.error("無法載入向上行走動畫");
+playerImgDown.onerror = () => console.error("無法載入向下行走動畫");
+playerImgLeft.onerror = () => console.error("無法載入向左行走動畫");
+playerImgRight.onerror = () => console.error("無法載入向右行走動畫");
+
+// 替換原來的sprites對象
+const sprites = {
+  up: playerImgUp,
+  down: playerImgDown,
+  left: playerImgLeft,
+  right: playerImgRight
+};
+
+// 初始化玩家狀態
+const START = { x: 11, y: 6, name: '' };     // 以 tile 計
+const player = { x: START.x*TILE+16, y: START.y*TILE+16, dir: 'down', f:0, tick:0, moving: false };
+
+/* ================= POI（照片 / 任務 / 對話） ================= */
+const poi = [
+  { id:'it',   name:'IT 設備櫃台',  x:16, y:4,  photo:'./workplace.jpg',
+    desc:'領取筆電、門禁卡、開通 AD/Email、設定 MFA。', talk:['歡迎入職！先領取筆電與開通帳號吧。','記得把 VPN 也測一下。'],
+    next:'請前往「VPN 測試點」。 (x:12,y:6)' },
+  { id:'vpn',  name:'VPN 測試點',  x:12, y:6,  photo:'./vpn_test.jpg',
+    desc:'測試 VPN 連線、內網可達性。', talk:['VPN 連上了嗎？試 ping 內網服務看看。'],
+    next:'下一步到「開發環境區」安裝 IDE/Git。 (x:37,y:8)'},
+  { id:'dev',  name:'開發環境區',  x:37, y:8,  photo:'./life_workplace_16_lg.jpg',
+    desc:'安裝 IDE / Git / Node / 內部 registry；拉專案試編譯。', talk:['IDE 裝好了嗎？','先跑一個 hello build 試試。'],
+    next:'去「保健中心」完成新人體檢。 (x:25,y:21)'},
+     { id:'cafeteria', name:'員工餐廳', x:11, y:28, photo:'./cafeteria.jpg',
+  desc:'提供多國料理與健康餐，支援員工卡支付，建議錯峰用餐。',
+  talk:['今天的餐點很豐富喔！','午餐高峰時段記得避開人潮。'],
+  next:'接下來請前往「保健中心」完成新人體檢。 (x:25,y:21)'
+    },
+  { id:'clinic',name:'保健中心',   x:25, y:21, photo:'./wellness.jpg',
+    desc:'健康檢查、緊急協助、心理諮商資源。', talk:['量血壓與視力在這邊。','身體不適可隨時來。'],
+    next:'最後去「HR 辦公室」繳交文件。 (x:48,y:25)'},
+  { id:'hr',   name:'HR 辦公室',   x:48, y:25, photo:'./HR.jpg',
+    desc:'報到文件與福利說明、權限補件。', talk:['歡迎加入！','記得完成線上新人導向課程。'],
+    next:'🎉 Day-1 完成，恭喜！'}
+];
+const END = poi[poi.length-1];
+
+const quests = [
+    { id:'vpn',   title:'VPN 測試',            done:false },
+  { id:'it',    title:'領取設備與開通帳號',  done:false },
+  { id:'dev',   title:'安裝開發環境',        done:false },
+  { id:'cafeteria', title:'前往員工餐廳用餐', done:false },
+  { id:'clinic',title:'完成健檢',            done:false },
+  { id:'hr',    title:'HR 文件繳交',        done:false },
+];
+
+function drawQuests(){
+  const ul = document.getElementById('qList'); ul.innerHTML='';
+  quests.forEach(q=>{
+    const li = document.createElement('li');
+    li.innerHTML = `<div>${q.done?`<span class="done">✔</span>`:'⬜'} ${q.title}</div>
+                    <small>${q.done?'已完成':'尚未完成'}</small>`;
+    ul.appendChild(li);
+  });
+  const pct = Math.round(quests.filter(q=>q.done).length/quests.length*100);
+  document.getElementById('pct').textContent = pct+'%';
+}
+
+/* ================= 繪圖（tiles / 道路 / 玩家 / 小地圖） ================= */
+function drawTile(t, x, y){
+  // 土地色調略亮，讓畫面不會太暗
+  if(t===0){ ctx.fillStyle='#2da26b'; }      // 草
+  if(t===1){ ctx.fillStyle='#b99c70'; }      // 路
+  if(t===2){ ctx.fillStyle='#30343a'; }      // 牆（阻擋）
+  if(t===3){ ctx.fillStyle='#2a4b8d'; }      // 水
+  if(t===4){ ctx.fillStyle='#c7d2fe'; }      // 建築地板
+  ctx.fillRect(x,y,TILE,TILE);
+  if(t===1){ ctx.fillStyle='rgba(0,0,0,.12)'; ctx.fillRect(x,y+TILE-3,TILE,3); }
+}
+function drawMap(camX,camY){
+  const startX = Math.floor(camX/TILE), startY = Math.floor(camY/TILE);
+  for(let j=0;j<VH+2;j++){
+    for(let i=0;i<VW+2;i++){
+      const tx = startX+i, ty=startY+j;
+      const t = (tx>=0&&ty>=0&&tx<MAP_W&&ty<MAP_H)? map[ty][tx] : 3;
+      drawTile(t, i*TILE-(camX%TILE), j*TILE-(camY%TILE));
+    }
+  }
+  // 地標標籤 + 圖示
+  ctx.font='12px monospace';
+  poi.forEach(p=>{
+    const sx = p.x*TILE - camX, sy = p.y*TILE - camY;
+    ctx.fillStyle='#fff';
+    ctx.fillRect(sx-28, sy-28, 80, 16);
+    ctx.strokeStyle='rgba(0,0,0,.2)'; ctx.strokeRect(sx-28, sy-28, 80, 16);
+    ctx.fillStyle='#111'; ctx.fillText(p.name.slice(0,8), sx-24, sy-16);
+    ctx.font='18px serif'; ctx.fillText('📍', sx-8, sy+6);
+  });
+}
+function drawPlayer(camX, camY) {
+  // 選擇正確的精靈圖
+  const spriteImg = sprites[player.dir];
+  
+  // 處理圖片未載入情況
+  if (!spriteImg || !spriteImg.complete) {
+    // 圖片未載入時顯示占位符
+    ctx.font='22px serif';
+    ctx.fillStyle = '#fff';
+    ctx.fillText('🧑‍💻', Math.floor(player.x - camX - 10), Math.floor(player.y - camY + 8));
+    return;
+  }
+  
+  // 每個方向有4幀，每幀32x32像素
+  const frameWidth = spriteImg.width / 4;
+  const frameHeight = spriteImg.height;
+  
+  // 根據動畫幀繪製正確的精靈部分
+  ctx.drawImage(
+    spriteImg,
+    player.f * frameWidth, 0, frameWidth, frameHeight,
+    Math.floor(player.x - camX - 16), Math.floor(player.y - camY - 16),
+    32, 32
+  );
+}
+
+// 亮色道路連線（可視化路徑）
+function drawRoads(camX,camY){
+  ctx.save();
+  ctx.translate(-camX, -camY);
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = 'rgba(255,255,255,.9)';
+  ctx.lineCap='round'; ctx.lineJoin='round';
+  ctx.beginPath();
+  const order = ['it','vpn','dev','cafeteria','clinic','hr'];
+  for(let i=0;i<order.length-1;i++){
+    const a = poi.find(p=>p.id===order[i]);
+    const b = poi.find(p=>p.id===order[i+1]);
+    ctx.moveTo(a.x*TILE, a.y*TILE);
+    ctx.lineTo(b.x*TILE, b.y*TILE);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+// 起點/終點 + 脈動光圈
+function drawStartEnd(camX, camY){
+  ctx.save();
+  ctx.translate(-camX, -camY);
+  const pulse = (Math.sin(performance.now()/400)+1)/2;  // 0~1
+  function ring(x, y, color){
+    const gx = x*TILE, gy = y*TILE;
+    const r  = 18 + 6*pulse;
+    const g = ctx.createRadialGradient(gx, gy, 0, gx, gy, r);
+    g.addColorStop(0, color);
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(gx, gy, r, 0, Math.PI*2); ctx.fill();
+  }
+  ring(START.x, START.y, 'rgba(16,185,129,.35)'); // 綠
+  ring(END.x,   END.y,   'rgba(245,158,11,.35)'); // 金
+
+  ctx.font='18px serif';
+  ctx.fillText('🚩', START.x*TILE-8, START.y*TILE+6);
+  ctx.fillText('🏆', END.x*TILE-8,   END.y*TILE+6);
+
+  //ctx.font='12px monospace';
+  //ctx.fillStyle='#fff';
+  //ctx.fillRect(START.x*TILE-22, START.y*TILE-28, 40, 16);
+  //ctx.strokeStyle='rgba(0,0,0,.2)'; ctx.strokeRect(START.x*TILE-22, START.y*TILE-28, 40, 16);
+  //ctx.fillStyle='#111'; ctx.fillText('起點', START.x*TILE-14, START.y*TILE-16);
+
+  ctx.fillStyle='#fff';
+  ctx.fillRect(END.x*TILE-22, END.y*TILE-28, 40, 16);
+  ctx.strokeStyle='rgba(0,0,0,.2)'; ctx.strokeRect(END.x*TILE-22, END.y*TILE-28, 40, 16);
+  ctx.fillStyle='#111'; ctx.fillText('終點', END.x*TILE-14, END.y*TILE-16);
+  ctx.restore();
+}
+
+/* ================= 小地圖 ================= */
+function drawMiniMap(camX, camY){
+  const w=120,h=90, x=18, y=18, pad=6;
+  ctx.save();
+  ctx.globalAlpha=.95;
+  ctx.fillStyle='#111'; ctx.fillRect(x-2, y-2, w+4, h+4);
+  ctx.fillStyle='#fff'; ctx.fillRect(x, y, w, h);
+  const scaleX = w/(MAP_W*TILE), scaleY=h/(MAP_H*TILE);
+
+  // 瓦片（只畫簡化色）
+  for(let ty=0;ty<MAP_H;ty++){
+    for(let tx=0;tx<MAP_W;tx++){
+      const t=map[ty][tx];
+      if(t===3) ctx.fillStyle='#a5b4fc';
+      else if(t===2) ctx.fillStyle='#9ca3af';
+      else if(t===1) ctx.fillStyle='#d6b891';
+      else ctx.fillStyle='#c7f0d8';
+      ctx.fillRect(x+tx*TILE*scaleX, y+ty*TILE*scaleY, TILE*scaleX, TILE*scaleY);
+    }
+  }
+
+  // POI
+  ctx.fillStyle='#ef4444';
+  poi.forEach(p=>{
+    ctx.fillRect(x+p.x*TILE*scaleX-2, y+p.y*TILE*scaleY-2, 4,4);
+  });
+
+  // Start / End
+  ctx.fillStyle='#10b981';
+  ctx.fillRect(x+START.x*TILE*scaleX-2, y+START.y*TILE*scaleY-2, 4,4);
+  ctx.fillStyle='#f59e0b';
+  ctx.fillRect(x+END.x*TILE*scaleX-2, y+END.y*TILE*scaleY-2, 4,4);
+
+  // 視口框
+  ctx.strokeStyle='#000';
+  ctx.lineWidth=1;
+  ctx.strokeRect(x+camX*scaleX, y+camY*scaleY, W*scaleX, H*scaleY);
+
+  // 玩家
+  ctx.fillStyle='#0ea5e9';
+  ctx.fillRect(x+player.x*scaleX-2, y+player.y*scaleY-2, 4,4);
+  ctx.restore();
+}
+
+/* ================= 日夜循環（可切換） ================= */
+let ENABLE_DAYNIGHT = false;  // 預設關閉，按 N 切換
+let tClock = 0, DAY_SPEED = 0.015;
+addEventListener('keydown', e=>{
+  if(e.key==='n' || e.key==='N') ENABLE_DAYNIGHT = !ENABLE_DAYNIGHT;
+  if(e.key==='r' || e.key==='R'){ player.x = START.x*TILE+16; player.y = START.y*TILE+16; }
+});
+function drawDayNight(){
+  if(!ENABLE_DAYNIGHT) return;
+  tClock += DAY_SPEED;
+  const k=(Math.sin(tClock)+1)/2;       // 0~1
+  const darkness = 0.10 + 0.20*k;      // 淡一點
+  ctx.fillStyle=`rgba(0,0,20,${darkness})`;
+  ctx.fillRect(0,0,W,H);
+}
+
+/* ================= 對話 & 照片 ================= */
+const dlgBox = document.getElementById('dlg');
+function say(lines){ // 逐句 Enter
+  let i=0; dlgBox.style.display='block';
+  function render(){ dlgBox.innerHTML = lines[i] + '　<span class="k">Enter</span> 下一句';
+    const handler = (e)=>{ if(e.key==='Enter'){ i++; if(i>=lines.length){ dlgBox.style.display='none'; removeEventListener('keydown',handler);} else render(); } }
+    addEventListener('keydown',handler,{once:true});
+  } render();
+}
+const ph = { modal:document.getElementById('photo'), title:document.getElementById('phTitle'),
+             img:document.getElementById('phImg'), desc:document.getElementById('phDesc') };
+function openPhoto(p){ ph.title.textContent=p.name; ph.img.src=p.photo||''; ph.desc.textContent=p.desc||''; ph.modal.classList.add('active'); }
+function closePhoto(){ ph.modal.classList.remove('active'); }
+
+/* ================= 互動 ================= */
+const hint = document.getElementById('hint');
+function checkPOI(){
+  for(const p of poi){
+    const dx = Math.abs(player.x/TILE - p.x), dy = Math.abs(player.y/TILE - p.y);
+    if(dx<0.8 && dy<0.8){
+      hint.innerHTML = `<b>${p.name}</b>　按 <b>E</b> 查看 / <b>Enter</b> 對話`;
+      if(keys['e']||keys['E']){ keys['e']=keys['E']=false; openPhoto(p); }
+      if(keys['Enter']){ keys['Enter']=false; say(p.talk); }
+      const q = quests.find(q=>q.id===p.id); if(q && !q.done){ q.done=true; drawQuests(); }
+      if(p.next) hint.innerHTML += `<div class="hint-muted" style="margin-top:4px">${p.next}</div>`;
+      return;
+    }
+  }
+  hint.textContent = '在園區內走動，靠近地標可互動。';
+}
+
+/* ================= 主迴圈 ================= */
+function loop(){
+  // 標記玩家為非移動狀態，然後檢查按鍵
+  player.moving = false;
+  
+  // 控制
+  if(keys['ArrowUp']||keys['w'])    move(0,-SPEED,'up');
+  if(keys['ArrowDown']||keys['s'])  move(0, SPEED,'down');
+  if(keys['ArrowLeft']||keys['a'])  move(-SPEED,0,'left');
+  if(keys['ArrowRight']||keys['d']) move( SPEED,0,'right');
+
+  // 如果玩家沒有移動，重置到第一幀
+  if(!player.moving && player.f !== 0) {
+    player.f = 0;
+  }
+
+  // 鏡頭跟隨
+  camX = Math.min(Math.max(0, player.x - W/2), MAP_W*TILE - W);
+  camY = Math.min(Math.max(0, player.y - H/2), MAP_H*TILE - H);
+
+  // 繪製
+  ctx.clearRect(0,0,W,H);
+  drawMap(camX,camY);
+  drawRoads(camX,camY);
+  drawStartEnd(camX,camY);
+  drawPlayer(camX,camY);
+  drawDayNight();
+  drawMiniMap(camX,camY);
+  checkPOI();
+
+  requestAnimationFrame(loop);
+}
+loop();
+
+function move(dx, dy, dir) {
+  player.dir = dir;
+  player.moving = true;
+  
+  // 只在移動時更新動畫
+  player.tick = (player.tick + 1) % 10;
+  if (player.tick === 0) {
+    player.f = (player.f + 1) % 4; // 4幀動畫
+  }
+  
+  const nx = player.x + dx, ny = player.y + dy;
+  const px = nx-12, py = ny-12, pw=24, ph=24;
+  const corners = [
+    [Math.floor(px/TILE), Math.floor(py/TILE)],
+    [Math.floor((px+pw)/TILE), Math.floor(py/TILE)],
+    [Math.floor(px/TILE), Math.floor((py+ph)/TILE)],
+    [Math.floor((px+pw)/TILE), Math.floor((py+ph)/TILE)],
+  ];
+  
+  if (!corners.some(([tx,ty]) => isBlocked(tx,ty))) {
+    player.x = nx; 
+    player.y = ny;
+  }
+}
+</script>
+</body>
+</html>
